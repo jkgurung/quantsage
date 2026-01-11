@@ -1,0 +1,81 @@
+# Mean Reversion Strategy for Cryptocurrency
+# Bollinger Bands + Z-score + RSI filter
+
+strategy:
+  name: BollingerMeanReversion_Crypto
+  enabled: true
+  asset_type: CRYPTO
+
+  # Symbols to trade
+  symbols:
+    - BTC/USD
+    - ETH/USD
+
+  # Bollinger Bands parameters
+  parameters:
+    bb_window: 20  # 20-period Bollinger Bands
+    bb_std: 2.0  # 2 standard deviations
+
+    # Z-score parameters
+    zscore_window: 20
+    zscore_threshold: 2.0  # Enter when |zscore| > 2.0
+
+    # RSI filter (avoid trending markets)
+    rsi_window: 14
+    rsi_oversold: 40  # Buy when RSI < 40
+    rsi_overbought: 60  # Sell when RSI > 60
+
+    # Exit parameters
+    stop_loss_pct: 0.02  # 2% stop loss (tight for crypto volatility)
+    take_profit_ratio: 1.5  # 1.5x distance to middle band
+    exit_on_middle_band: true  # Exit when price returns to middle
+
+  # Position sizing
+  position_sizing:
+    method: risk_based  # Risk-based sizing
+    max_position_pct: 0.08  # 8% max per position (smaller for crypto)
+
+  # Entry conditions (ALL must be true)
+  entry_rules:
+    buy:
+      - price < bb_lower  # Price below lower band
+      - zscore < -2.0  # Strong deviation
+      - rsi < 40  # Oversold
+      - volume > avg_volume_20 * 1.2  # Volume confirmation
+
+    sell:
+      - price > bb_upper  # Price above upper band
+      - zscore > 2.0  # Strong deviation
+      - rsi > 60  # Overbought
+      - volume > avg_volume_20 * 1.2  # Volume confirmation
+
+  # Exit conditions (ANY can trigger exit)
+  exit_rules:
+    - price_returns_to_middle_band
+    - stop_loss_hit
+    - take_profit_hit
+    - opposite_signal_generated
+
+  # Filters (conditions that must be met to trade)
+  filters:
+    - type: volatility
+      max_daily_volatility: 0.08  # Don't trade if volatility > 8%
+
+    - type: volume
+      min_daily_volume: 1000000  # Minimum $1M daily volume
+
+    - type: spread
+      max_spread_pct: 0.005  # Max 0.5% spread
+
+# Backtesting configuration
+backtest:
+  start_date: 2023-01-01
+  end_date: 2024-01-01
+  initial_capital: 10000
+  benchmark: BTC/USD  # Compare against BTC buy-and-hold
+
+# Paper trading configuration
+paper_trading:
+  enabled: true
+  simulate_slippage: true
+  simulate_fees: true
