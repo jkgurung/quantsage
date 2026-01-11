@@ -371,6 +371,19 @@ class BacktestReport:
         trades = self.metrics.get('trades', {})
         monthly = self.metrics.get('monthly', {})
 
+        # Get chart filenames
+        equity_chart = Path(charts.get('equity', '')).name if charts.get('equity') else ''
+        drawdown_chart = Path(charts.get('drawdown', '')).name if charts.get('drawdown') else ''
+        returns_chart = Path(charts.get('returns', '')).name if charts.get('returns') else ''
+        monthly_chart = Path(charts.get('monthly', '')).name if charts.get('monthly') else ''
+
+        # Get export filenames
+        trades_csv = Path(exports.get('trades_csv', '')).name if exports.get('trades_csv') else ''
+        results_json = Path(exports.get('results_json', '')).name if exports.get('results_json') else ''
+
+        # Compute CSS classes
+        return_class = 'positive' if returns.get('total_return_pct', 0) > 0 else 'negative'
+
         # Generate HTML
         html = f"""
 <!DOCTYPE html>
@@ -408,7 +421,7 @@ class BacktestReport:
         </tr>
         <tr>
             <td>Total Return</td>
-            <td class="{'positive' if returns.get('total_return_pct', 0) > 0 else 'negative'}">
+            <td class="{return_class}">
                 {returns.get('total_return_pct', 0)*100:.2f}%
             </td>
         </tr>
@@ -468,28 +481,28 @@ class BacktestReport:
 
     <h2>Equity Curve</h2>
     <div class="chart">
-        <img src="{Path(charts.get('equity', '')).name}" alt="Equity Curve">
+        <img src="{equity_chart}" alt="Equity Curve">
     </div>
 
     <h2>Drawdown</h2>
     <div class="chart">
-        <img src="{Path(charts.get('drawdown', '')).name}" alt="Drawdown">
+        <img src="{drawdown_chart}" alt="Drawdown">
     </div>
 
     <h2>Returns Distribution</h2>
     <div class="chart">
-        <img src="{Path(charts.get('returns', '')).name}" alt="Returns Distribution">
+        <img src="{returns_chart}" alt="Returns Distribution">
     </div>
 
     <h2>Monthly Returns Heatmap</h2>
     <div class="chart">
-        <img src="{Path(charts.get('monthly', '')).name}" alt="Monthly Returns">
+        <img src="{monthly_chart}" alt="Monthly Returns">
     </div>
 
     <h2>Exports</h2>
     <div class="export-links">
-        <a href="{Path(exports.get('trades_csv', '')).name}">Download Trade Log (CSV)</a>
-        <a href="{Path(exports.get('results_json', '')).name}">Download Full Results (JSON)</a>
+        <a href="{trades_csv}">Download Trade Log (CSV)</a>
+        <a href="{results_json}">Download Full Results (JSON)</a>
     </div>
 
     <hr>
