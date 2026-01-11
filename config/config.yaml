@@ -1,0 +1,67 @@
+# QuantSage Main Configuration
+# Multi-asset trading system for cryptocurrencies and stocks
+
+system:
+  mode: backtest  # backtest, paper, live
+  log_level: INFO  # DEBUG, INFO, WARNING, ERROR, CRITICAL
+
+database:
+  type: sqlite
+  path: data/quantsage.db
+
+# Asset configuration
+data:
+  # Cryptocurrency symbols (format: BASE/QUOTE)
+  crypto_symbols:
+    - symbol: BTC/USD
+      exchange: coinbase
+      enabled: true
+    - symbol: ETH/USD
+      exchange: coinbase
+      enabled: true
+    - symbol: XRP/USD
+      exchange: coinbase
+      enabled: false  # Disable for initial testing
+
+  # Stock symbols (for future expansion)
+  stock_symbols:
+    - symbol: AAPL
+      enabled: false
+    - symbol: TSLA
+      enabled: false
+    - symbol: SPY
+      enabled: false
+
+  # Data sources
+  data_sources:
+    crypto:
+      default: coinbase
+      api_key: "placeholder_api_key"  # Set via COINBASE_API_KEY env var
+      api_secret: "placeholder_api_secret"
+      rate_limit: 10  # requests per second
+
+    stocks:
+      default: alpaca
+      api_key: "placeholder_api_key"  # Set via ALPACA_API_KEY env var
+      api_secret: "placeholder_api_secret"
+      paper_trading: true
+
+  # Data collection settings
+  update_frequency: 60  # seconds
+  lookback_days: 90  # days of historical data
+  min_data_points: 100  # minimum required for strategy
+
+# Portfolio configuration
+portfolio:
+  initial_capital: 10000.00
+  base_currency: USD
+
+# Monitoring & Alerts
+monitoring:
+  enable_dashboard: false  # Enable when ready
+  dashboard_port: 8050
+  alert_email: "your_email@example.com"  # Set via ALERT_EMAIL env var
+
+# Strategy configuration files
+strategies_config: config/strategies/
+risk_config: config/risk.yaml
