@@ -13,13 +13,12 @@ A quantitative trading system for cryptocurrencies and stocks with comprehensive
 
 ## Project Status
 
-🚧 **Under Development** - Week 1: Core Infrastructure
+🚧 **Under Development** - Week 4 Complete, Week 5 In Progress
 
-Currently implementing:
-- Database schema and storage layer
-- Event system
-- Configuration management
-- Data collection pipeline
+Next up:
+- Backtesting engine (event-driven replay)
+- Performance metrics and reporting
+- Visualizations (equity curve, drawdown)
 
 ## Quick Start
 
@@ -53,9 +52,9 @@ See `/docs/architecture.md` for detailed design documentation.
 
 ## Development Timeline
 
-- **Week 1-2**: Core infrastructure (database, events, config) ✅ In Progress
-- **Week 3-4**: Strategy framework and risk management
-- **Week 5**: Backtesting engine
+- **Week 1-2**: Core infrastructure (database, events, config) ✅ Complete
+- **Week 3-4**: Strategy framework and risk management ✅ Complete
+- **Week 5**: Backtesting engine 🚧 In Progress
 - **Week 6**: Portfolio management and execution
 - **Week 7**: Monitoring and dashboard
 - **Week 8**: Production hardening
