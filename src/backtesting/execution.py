@@ -104,7 +104,7 @@ class ExecutionEngine:
                     side=order.side,
                     order_type=order.order_type,
                     quantity=order.quantity,
-                    strategy_id=order.metadata.get('strategy_id', 'unknown'),
+                    strategy_id=order.strategy_id if order.strategy_id else 'unknown',
                     price=order.price
                 )
 
@@ -135,7 +135,7 @@ class ExecutionEngine:
             metadata={
                 'bar': bar,
                 'slippage_applied': True,
-                'strategy_id': order.metadata.get('strategy_id', 'unknown')
+                'strategy_id': order.strategy_id if order.strategy_id else 'unknown'
             }
         )
 

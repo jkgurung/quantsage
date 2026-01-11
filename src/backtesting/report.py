@@ -384,6 +384,9 @@ class BacktestReport:
         # Compute CSS classes
         return_class = 'positive' if returns.get('total_return_pct', 0) > 0 else 'negative'
 
+        # Compute final value (avoid conditional in format spec)
+        final_value = self.equity_curve[-1][1] if self.equity_curve else 0
+
         # Generate HTML
         html = f"""
 <!DOCTYPE html>
@@ -411,7 +414,7 @@ class BacktestReport:
     <h1>Backtest Report: {self.backtest_id}</h1>
     <p><strong>Date:</strong> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
     <p><strong>Initial Capital:</strong> ${self.initial_capital:,.2f}</p>
-    <p><strong>Final Value:</strong> ${self.equity_curve[-1][1]:,.2f if self.equity_curve else 0}</p>
+    <p><strong>Final Value:</strong> ${final_value:,.2f}</p>
 
     <h2>Performance Metrics</h2>
     <table>
