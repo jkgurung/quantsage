@@ -60,6 +60,25 @@ class DatabaseManager:
             self.connection.close()
             self.connection = None
 
+    def query(self, sql: str, params: Tuple = ()) -> List[Dict]:
+        """
+        Execute a SELECT query and return results as list of dicts.
+
+        Args:
+            sql: SQL SELECT statement
+            params: Query parameters (for parameterized queries)
+
+        Returns:
+            List of result rows as dicts
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(sql, params)
+            rows = cursor.fetchall()
+
+            # Convert Row objects to dicts
+            return [dict(row) for row in rows]
+
     # ==================== Market Data Methods ====================
 
     def insert_market_data(self, symbol: str, asset_type: str, timestamp: datetime,
