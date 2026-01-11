@@ -1,0 +1,54 @@
+# Risk Management Configuration
+# Multi-layer risk controls for capital protection
+
+risk_limits:
+  # Position-level risk
+  max_position_pct: 0.10  # 10% of portfolio per position
+  position_sizing_method: risk_based  # fixed, risk_based, kelly, volatility_adjusted
+
+  # Symbol-level risk
+  max_symbol_exposure: 0.15  # 15% max exposure per symbol
+
+  # Portfolio-level risk
+  max_portfolio_exposure: 0.80  # 80% max invested, 20% cash reserve
+  max_correlation: 0.70  # Max correlation between positions
+
+  # System-level risk
+  daily_loss_limit: 0.05  # -5% daily loss stops trading for the day
+  max_drawdown: 0.20  # -20% from peak halts all trading
+
+  # Stop-loss and take-profit
+  default_stop_loss_pct: 0.02  # 2% stop loss
+  default_take_profit_pct: 0.04  # 4% take profit (2:1 R/R ratio)
+  trailing_stop: true
+  trailing_stop_atr_multiplier: 1.5  # 1.5 x ATR for trailing stop
+
+# Transaction costs (for backtesting)
+transaction_costs:
+  crypto:
+    maker_fee: 0.0040  # Coinbase Advanced 0.40%
+    taker_fee: 0.0060  # Coinbase Advanced 0.60%
+
+  stocks:
+    maker_fee: 0.0000  # Alpaca commission-free
+    taker_fee: 0.0000
+    sec_fee: 0.0000278  # SEC fee per share sold
+    finra_taf: 0.000166  # FINRA TAF per share sold
+
+  # Slippage modeling
+  slippage_model: volume_based  # fixed, percent, volume_based
+  slippage_params:
+    base_slippage: 0.0010  # 0.1% base slippage
+    volume_impact: 0.00001  # Impact per $1000 order size
+
+# Position sizing parameters
+position_sizing:
+  # Risk-based sizing
+  account_risk_per_trade: 0.01  # Risk 1% of account per trade
+
+  # Volatility-adjusted sizing
+  volatility_lookback: 20  # days
+  volatility_target: 0.02  # 2% daily volatility target
+
+  # Kelly Criterion (if enabled)
+  kelly_fraction: 0.25  # Use 25% of full Kelly
