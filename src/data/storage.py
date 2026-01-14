@@ -208,6 +208,27 @@ class DatabaseManager:
             logger.error(f"Error fetching latest market data: {e}")
             return []
 
+    def get_current_market_prices(self, symbols: List[str]) -> Dict[str, float]:
+        """
+        Get latest market price for each symbol.
+
+        Args:
+            symbols: List of symbols to fetch prices for
+
+        Returns:
+            Dict mapping symbol -> latest close price
+        """
+        if not symbols:
+            return {}
+
+        prices = {}
+        for symbol in symbols:
+            latest = self.get_latest_market_data(symbol, limit=1)
+            if latest:
+                prices[symbol] = latest[0]['close']
+
+        return prices
+
     # ==================== Position Methods ====================
 
     def create_position(self, symbol: str, asset_type: str, side: str,
@@ -472,6 +493,104 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Error logging risk event: {e}")
             return False
+
+    def get_recent_risk_events(self, limit: int = 10,
+                              resolved: Optional[bool] = None) -> List[Dict]:
+        """
+        Get recent risk events from database.
+
+        Args:
+            limit: Max number of events to return
+            resolved: Filter by resolved status (None = all, False = unresolved, True = resolved)
+
+        Returns:
+            List of risk event dicts
+        """
+        if resolved is None:
+            query = """
+                SELECT timestamp, event_type, severity, symbol, description, resolved
+                FROM risk_events
+                ORDER BY timestamp DESC
+                LIMIT ?
+            """
+            params = (limit,)
+        else:
+            query = """
+                SELECT timestamp, event_type, severity, symbol, description, resolved
+                FROM risk_events
+                WHERE resolved = ?
+                ORDER BY timestamp DESC
+                LIMIT ?
+            """
+            params = (1 if resolved else 0, limit)
+
+        try:
+            return self.query(query, params)
+        except Exception as e:
+            logger.error(f"Error fetching risk events: {e}")
+            return []
+
+    def get_equity_curve_from_trades(self, initial_capital: float) -> List[Dict]:
+        """
+        Build equity curve from trades chronologically.
+
+        Args:
+            initial_capital: Starting capital amount
+
+        Returns:
+            List of {timestamp, equity} dicts
+        """
+        from datetime import timedelta
+
+        # Get all trades ordered by timestamp
+        query = """
+            SELECT timestamp, side, quantity, price, commission
+            FROM trades
+            ORDER BY timestamp ASC
+        """
+        trades = self.query(query)
+
+        if not trades:
+            return []
+
+        # Build equity curve
+        cash = initial_capital
+        equity_curve = []
+
+        # Start point (before first trade)
+        first_trade_time = datetime.fromisoformat(trades[0]['timestamp'])
+        equity_curve.append({
+            'timestamp': first_trade_time - timedelta(minutes=5),
+            'equity': initial_capital
+        })
+
+        # Process each trade
+        for trade in trades:
+            if trade['side'] == 'BUY':
+                # Buying costs cash
+                cash -= (trade['quantity'] * trade['price'] + trade['commission'])
+            else:  # SELL
+                # Selling adds cash
+                cash += (trade['quantity'] * trade['price'] - trade['commission'])
+
+            # Get open positions value at this point
+            # Use pnl_unrealized from positions table
+            positions_query = """
+                SELECT SUM(pnl_unrealized) as total_unrealized
+                FROM positions
+                WHERE status = 'OPEN' AND entry_time <= ?
+            """
+            result = self.query(positions_query, (trade['timestamp'],))
+            unrealized_pnl = result[0]['total_unrealized'] if result and result[0]['total_unrealized'] else 0
+
+            equity = cash + unrealized_pnl
+
+            equity_curve.append({
+                'timestamp': datetime.fromisoformat(trade['timestamp']),
+                'equity': equity
+            })
+
+        return equity_curve
 
 
 if __name__ == "__main__":

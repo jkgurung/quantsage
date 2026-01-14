@@ -137,17 +137,12 @@ def main():
 
     # 5. Risk Manager
     print("Initializing Risk Manager...")
+    initial_cash = 100000.0
     risk_manager = RiskManager(
         event_bus=event_bus,
         db=db,
-        config=dict(risk_config)
-    )
-
-    # Set initial portfolio value for risk manager
-    initial_cash = 100000.0
-    risk_manager.update_portfolio_state(
-        portfolio_value=initial_cash,
-        current_drawdown=0.0
+        config=dict(risk_config),
+        initial_capital=initial_cash
     )
 
     # 6. Portfolio Manager (live version)

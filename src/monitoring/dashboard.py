@@ -22,6 +22,7 @@ import plotly.express as px
 import pandas as pd
 
 from src.data.storage import DatabaseManager
+from src.core.config import ConfigManager
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +51,14 @@ class TradingDashboard:
         self.db = DatabaseManager(db_path=db_path)
         self.refresh_interval = refresh_interval
 
+        # Load configuration
+        try:
+            self.config = ConfigManager()
+            self.initial_capital = self.config.get('portfolio.initial_capital', 100000.0)
+        except Exception as e:
+            logger.warning(f"Could not load config, using defaults: {e}")
+            self.initial_capital = 100000.0
+
         # Initialize Dash app with Bootstrap CSS
         self.app = dash.Dash(
             __name__,
@@ -63,7 +72,7 @@ class TradingDashboard:
         # Register callbacks
         self._register_callbacks()
 
-        logger.info(f"Dashboard initialized: {db_path}, refresh every {refresh_interval}ms")
+        logger.info(f"Dashboard initialized: {db_path}, initial_capital: ${self.initial_capital:,.2f}, refresh every {refresh_interval}ms")
 
     def _create_layout(self):
         """Create dashboard layout."""
@@ -124,6 +133,12 @@ class TradingDashboard:
                     html.Div([
                         html.H3('📝 Recent Trades', style={'color': '#457B9D'}),
                         html.Div(id='recent-trades'),
+                    ], style={'marginBottom': '30px'}),
+
+                    # Risk Alerts
+                    html.Div([
+                        html.H3('⚠️ Risk Alerts', style={'color': '#457B9D'}),
+                        html.Div(id='risk-alerts'),
                     ]),
                 ], style={'width': '48%', 'display': 'inline-block', 'verticalAlign': 'top', 'marginLeft': '4%'}),
             ]),
@@ -178,63 +193,96 @@ class TradingDashboard:
                 return error_msg, {}, error_msg, error_msg, error_msg, error_msg, "Error"
 
     def _get_portfolio_data(self) -> Dict:
-        """Get portfolio summary data."""
-        # This would come from PortfolioManager in live system
-        # For now, calculate from database
+        """Get portfolio summary data with current prices."""
+        try:
+            # Get open positions
+            positions = self.db.get_open_positions()
 
-        # Get open positions
-        positions = self.db.get_open_positions()
+            # Get current market prices for all positions
+            symbols = [pos['symbol'] for pos in positions]
+            current_prices = self.db.get_current_market_prices(symbols) if symbols else {}
 
-        # Calculate portfolio value (simplified - would use current prices in live)
-        total_position_value = sum(
-            pos['quantity'] * pos['entry_price']
-            for pos in positions
-        )
+            # Calculate total position value using CURRENT prices
+            total_position_value = 0
+            for pos in positions:
+                current_price = current_prices.get(pos['symbol'], pos['entry_price'])
 
-        # Get recent portfolio value from trades or positions
-        # Placeholder calculation
-        cash = 100000.0  # Would come from PortfolioManager
-        portfolio_value = cash + total_position_value
+                # Calculate position value based on side
+                if pos['side'] == 'LONG':
+                    position_value = pos['quantity'] * current_price
+                else:  # SHORT
+                    # For shorts, value is entry cost plus/minus P&L
+                    position_value = pos['quantity'] * pos['entry_price']
 
-        # Calculate P&L
-        initial_capital = 100000.0
-        total_pnl = portfolio_value - initial_capital
-        total_pnl_pct = (total_pnl / initial_capital) * 100
+                total_position_value += position_value
 
-        return {
-            'portfolio_value': portfolio_value,
-            'cash': cash,
-            'total_pnl': total_pnl,
-            'total_pnl_pct': total_pnl_pct,
-            'num_positions': len(positions),
-            'initial_capital': initial_capital
-        }
+            # Calculate cash from trades
+            # Get total buy costs and sell proceeds
+            buy_query = "SELECT SUM(quantity * price + commission) as total FROM trades WHERE side = 'BUY'"
+            sell_query = "SELECT SUM(quantity * price - commission) as total FROM trades WHERE side = 'SELL'"
+
+            buy_result = self.db.query(buy_query)
+            sell_result = self.db.query(sell_query)
+
+            total_buy_cost = buy_result[0]['total'] if buy_result and buy_result[0]['total'] else 0
+            total_sell_proceeds = sell_result[0]['total'] if sell_result and sell_result[0]['total'] else 0
+
+            # Cash = initial capital + sells - buys
+            cash = self.initial_capital + total_sell_proceeds - total_buy_cost
+
+            # Portfolio value = cash + open positions value
+            portfolio_value = cash + total_position_value
+
+            # Calculate P&L
+            total_pnl = portfolio_value - self.initial_capital
+            total_pnl_pct = (total_pnl / self.initial_capital) * 100 if self.initial_capital > 0 else 0
+
+            return {
+                'portfolio_value': portfolio_value,
+                'cash': cash,
+                'total_pnl': total_pnl,
+                'total_pnl_pct': total_pnl_pct,
+                'num_positions': len(positions),
+                'initial_capital': self.initial_capital
+            }
+
+        except Exception as e:
+            logger.error(f"Error getting portfolio data: {e}", exc_info=True)
+            # Return safe defaults
+            return {
+                'portfolio_value': self.initial_capital,
+                'cash': self.initial_capital,
+                'total_pnl': 0.0,
+                'total_pnl_pct': 0.0,
+                'num_positions': 0,
+                'initial_capital': self.initial_capital
+            }
 
     def _get_equity_data(self) -> List[Dict]:
-        """Get equity curve data."""
-        # Query trades to build equity curve
-        query = """
-            SELECT timestamp, price, quantity, side
-            FROM trades
-            ORDER BY timestamp
-        """
-        trades = self.db.query(query)
+        """Get equity curve data from trades."""
+        try:
+            # Use database method to build equity curve from trades
+            equity_curve = self.db.get_equity_curve_from_trades(self.initial_capital)
 
-        if not trades:
-            return []
+            # If no trades yet, return initial point
+            if not equity_curve:
+                return [{
+                    'timestamp': datetime.now() - timedelta(hours=24),
+                    'equity': self.initial_capital
+                }, {
+                    'timestamp': datetime.now(),
+                    'equity': self.initial_capital
+                }]
 
-        # Build equity curve (simplified)
-        equity = 100000.0
-        equity_curve = [{'timestamp': datetime.now() - timedelta(hours=24), 'equity': equity}]
+            return equity_curve
 
-        for trade in trades:
-            # Simple P&L calculation (would be more sophisticated in live)
-            equity_curve.append({
-                'timestamp': datetime.fromisoformat(trade[0]),
-                'equity': equity
-            })
-
-        return equity_curve
+        except Exception as e:
+            logger.error(f"Error getting equity data: {e}", exc_info=True)
+            # Return flat line at initial capital
+            return [{
+                'timestamp': datetime.now() - timedelta(hours=24),
+                'equity': self.initial_capital
+            }]
 
     def _get_positions_data(self) -> List[Dict]:
         """Get open positions."""
@@ -243,7 +291,7 @@ class TradingDashboard:
     def _get_signals_data(self) -> List[Dict]:
         """Get recent signals."""
         query = """
-            SELECT timestamp, symbol, direction, price, confidence, strategy_id
+            SELECT timestamp, symbol, signal_type, price, confidence, strategy_id
             FROM signals
             ORDER BY timestamp DESC
             LIMIT 10
@@ -254,7 +302,7 @@ class TradingDashboard:
             {
                 'timestamp': s[0],
                 'symbol': s[1],
-                'direction': s[2],
+                'direction': s[2],  # signal_type maps to direction for display
                 'price': s[3],
                 'confidence': s[4],
                 'strategy_id': s[5]
@@ -283,6 +331,14 @@ class TradingDashboard:
             }
             for t in trades
         ]
+
+    def _get_risk_alerts(self) -> List[Dict]:
+        """Get recent unresolved risk events."""
+        try:
+            return self.db.get_recent_risk_events(limit=10, resolved=False)
+        except Exception as e:
+            logger.error(f"Error getting risk alerts: {e}")
+            return []
 
     def _get_metrics_data(self) -> Dict:
         """Get performance metrics."""
@@ -377,36 +433,58 @@ class TradingDashboard:
         return fig
 
     def _build_positions_table(self, positions: List[Dict]):
-        """Build open positions table."""
+        """Build open positions table with current prices."""
         if not positions:
             return html.P('No open positions', style={'color': '#666', 'fontStyle': 'italic'})
 
-        # Format data for table
-        table_data = []
-        for pos in positions:
-            unrealized_pnl = pos.get('pnl_unrealized', 0)
-            pnl_color = 'green' if unrealized_pnl >= 0 else 'red'
+        try:
+            # Get current market prices
+            symbols = [pos['symbol'] for pos in positions]
+            current_prices = self.db.get_current_market_prices(symbols)
 
-            table_data.append({
-                'Symbol': pos['symbol'],
-                'Side': pos['side'],
-                'Qty': f"{pos['quantity']:.6f}",
-                'Entry': f"${pos['entry_price']:,.2f}",
-                'P&L': f"${unrealized_pnl:,.2f}",
-                'Strategy': pos.get('strategy_id', 'N/A')
-            })
+            # Format data for table
+            table_data = []
+            for pos in positions:
+                current_price = current_prices.get(pos['symbol'], pos['entry_price'])
 
-        df = pd.DataFrame(table_data)
+                # Calculate unrealized P&L
+                if pos['side'] == 'LONG':
+                    pnl_unrealized = pos['quantity'] * (current_price - pos['entry_price'])
+                else:  # SHORT
+                    pnl_unrealized = pos['quantity'] * (pos['entry_price'] - current_price)
 
-        return dash_table.DataTable(
-            data=df.to_dict('records'),
-            columns=[{'name': i, 'id': i} for i in df.columns],
-            style_cell={'textAlign': 'left', 'padding': '10px', 'fontSize': '14px'},
-            style_header={'backgroundColor': '#2E86AB', 'color': 'white', 'fontWeight': 'bold'},
-            style_data_conditional=[
-                {'if': {'row_index': 'odd'}, 'backgroundColor': '#f8f9fa'}
-            ]
-        )
+                # Use stored pnl_unrealized if available (already accounts for commissions)
+                if pos.get('pnl_unrealized') is not None:
+                    pnl_unrealized = pos['pnl_unrealized']
+
+                pnl_pct = (pnl_unrealized / (pos['quantity'] * pos['entry_price'])) * 100 if pos['entry_price'] > 0 else 0
+
+                table_data.append({
+                    'Symbol': pos['symbol'],
+                    'Side': pos['side'],
+                    'Qty': f"{pos['quantity']:.6f}",
+                    'Entry': f"${pos['entry_price']:,.2f}",
+                    'Current': f"${current_price:,.2f}",  # NEW
+                    'P&L $': f"${pnl_unrealized:,.2f}",
+                    'P&L %': f"{pnl_pct:+.2f}%",  # NEW
+                    'Strategy': pos.get('strategy_id', 'N/A')
+                })
+
+            df = pd.DataFrame(table_data)
+
+            return dash_table.DataTable(
+                data=df.to_dict('records'),
+                columns=[{'name': i, 'id': i} for i in df.columns],
+                style_cell={'textAlign': 'left', 'padding': '10px', 'fontSize': '14px'},
+                style_header={'backgroundColor': '#2E86AB', 'color': 'white', 'fontWeight': 'bold'},
+                style_data_conditional=[
+                    {'if': {'row_index': 'odd'}, 'backgroundColor': '#f8f9fa'}
+                ]
+            )
+
+        except Exception as e:
+            logger.error(f"Error building positions table: {e}", exc_info=True)
+            return html.P(f'Error loading positions: {e}', style={'color': 'red'})
 
     def _build_signals_table(self, signals: List[Dict]):
         """Build recent signals table."""
@@ -507,7 +585,7 @@ class TradingDashboard:
         print(f"🔄 Auto-refresh: Every {self.refresh_interval/1000:.0f} seconds")
         print(f"\n⚠️  Press CTRL+C to stop the server\n")
 
-        self.app.run_server(host=host, port=port, debug=debug)
+        self.app.run(host=host, port=port, debug=debug)
 
 
 def create_dashboard(db_path: str = 'data/paper_trading.db',
