@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 QuantSage is a production-ready multi-asset trading system built with an event-driven architecture. The same code runs in backtesting, paper trading, and live trading modes, eliminating backtest-to-live discrepancies. Currently focused on cryptocurrency trading via CCXT (Coinbase), with plans to expand to stocks via Alpaca.
 
-**Current Status**: Week 5 (Backtesting Engine) - Core infrastructure, strategies, risk management, and backtesting engine are complete.
+**Current Status**: Week 6-7 (Live Trading & Monitoring) - Core infrastructure, strategies, risk management, backtesting engine, live trading components, and real-time web dashboard are complete. System is ready for paper trading validation.
 
 ## Development Commands
 
@@ -57,6 +57,28 @@ python scripts/init_db.py
 
 # Database location: data/quantsage.db (SQLite)
 # Backtest databases: data/backtests/{backtest_id}.db
+```
+
+### Running the Dashboard
+```bash
+# Start real-time monitoring dashboard
+python scripts/run_dashboard.py
+
+# Open browser to http://localhost:8050
+# Dashboard shows: portfolio value, positions, trades, equity curve, performance metrics
+
+# Optional: Use custom database or port
+python scripts/run_dashboard.py --db data/custom.db --port 9000
+```
+
+### Paper Trading
+```bash
+# Run paper trading demo (simulated market data)
+python scripts/paper_trading_demo.py
+
+# Run with dashboard for live monitoring:
+# Terminal 1: python scripts/run_dashboard.py
+# Terminal 2: python scripts/paper_trading_demo.py
 ```
 
 ## Architecture Overview
@@ -171,6 +193,20 @@ Multi-layer risk validation (validates ALL signals before execution):
 - Calculates realized and unrealized P&L
 - Manages stop-loss and take-profit orders
 - Publishes PositionUpdateEvents
+
+#### 7. Monitoring & Dashboard (`src/monitoring/`)
+- `dashboard.py`: Real-time web dashboard built with Plotly Dash
+- Auto-refreshes every 5 seconds
+- Displays: Portfolio value, cash balance, open positions, P&L, equity curve
+- Shows recent signals, trades, and performance metrics
+- Accessible at http://localhost:8050 by default
+
+**Dashboard Features**:
+- Portfolio summary cards (value, cash, P&L, positions count)
+- Interactive equity curve chart
+- Open positions table with real-time P&L
+- Recent signals and trades tables
+- Performance metrics (win rate, profit factor, etc.)
 
 ### Configuration Architecture
 All configuration in YAML files (no magic numbers in code):
@@ -293,7 +329,7 @@ quantsage/
 │   ├── backtesting/       # Backtest engine
 │   ├── portfolio/         # Portfolio management
 │   ├── execution/         # Order execution
-│   ├── monitoring/        # Dashboard (future)
+│   ├── monitoring/        # Real-time web dashboard ✅
 │   └── ml/                # ML models (future)
 ├── config/                # YAML configurations
 ├── scripts/               # Utility scripts
