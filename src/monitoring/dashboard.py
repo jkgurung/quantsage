@@ -98,6 +98,12 @@ class TradingDashboard:
                 html.Div(id='portfolio-summary', children=[]),
             ], style={'marginBottom': '30px'}),
 
+            # Circuit Breaker Status Panel
+            html.Div([
+                html.H2('🛡️ Risk Status', style={'color': '#457B9D', 'marginBottom': '15px'}),
+                html.Div(id='circuit-breaker-status', children=[]),
+            ], style={'marginBottom': '30px'}),
+
             # Two column layout
             html.Div([
                 # Left column: Charts
@@ -157,10 +163,12 @@ class TradingDashboard:
 
         @self.app.callback(
             [Output('portfolio-summary', 'children'),
+             Output('circuit-breaker-status', 'children'),
              Output('equity-curve', 'figure'),
              Output('open-positions', 'children'),
              Output('recent-signals', 'children'),
              Output('recent-trades', 'children'),
+             Output('risk-alerts', 'children'),
              Output('performance-metrics', 'children'),
              Output('last-update-time', 'children')],
             [Input('interval-component', 'n_intervals')]
@@ -170,27 +178,32 @@ class TradingDashboard:
             try:
                 # Get data
                 portfolio_data = self._get_portfolio_data()
+                circuit_breaker_data = self._get_circuit_breaker_status()
                 equity_data = self._get_equity_data()
                 positions_data = self._get_positions_data()
                 signals_data = self._get_signals_data()
                 trades_data = self._get_trades_data()
+                risk_alerts_data = self._get_risk_alerts()
                 metrics_data = self._get_metrics_data()
 
                 # Build components
                 summary_cards = self._build_summary_cards(portfolio_data)
+                circuit_breaker_display = self._build_circuit_breaker_display(circuit_breaker_data)
                 equity_fig = self._build_equity_chart(equity_data)
                 positions_table = self._build_positions_table(positions_data)
                 signals_table = self._build_signals_table(signals_data)
                 trades_table = self._build_trades_table(trades_data)
+                risk_alerts_table = self._build_risk_alerts_table(risk_alerts_data)
                 metrics_display = self._build_metrics_display(metrics_data)
                 update_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
-                return summary_cards, equity_fig, positions_table, signals_table, trades_table, metrics_display, update_time
+                return (summary_cards, circuit_breaker_display, equity_fig, positions_table,
+                        signals_table, trades_table, risk_alerts_table, metrics_display, update_time)
 
             except Exception as e:
                 logger.error(f"Dashboard update error: {e}", exc_info=True)
                 error_msg = html.Div(f"Error updating dashboard: {e}", style={'color': 'red'})
-                return error_msg, {}, error_msg, error_msg, error_msg, error_msg, "Error"
+                return error_msg, error_msg, {}, error_msg, error_msg, error_msg, error_msg, error_msg, "Error"
 
     def _get_portfolio_data(self) -> Dict:
         """Get portfolio summary data with current prices."""
@@ -567,6 +580,198 @@ class TradingDashboard:
                          style={'color': 'green' if metrics['profit_factor'] > 1 else 'red'})
             ]),
         ], style={'backgroundColor': '#f8f9fa', 'padding': '20px', 'borderRadius': '8px'})
+
+    def _get_circuit_breaker_status(self) -> Dict:
+        """Get circuit breaker and risk status from database."""
+        try:
+            # Check for circuit breaker events
+            query = """
+                SELECT event_type, severity, timestamp, description
+                FROM risk_events
+                WHERE event_type LIKE '%CIRCUIT_BREAKER%' OR event_type LIKE '%HALT%'
+                ORDER BY timestamp DESC
+                LIMIT 1
+            """
+            breaker_events = self.db.query(query)
+
+            # Calculate current drawdown from portfolio data
+            portfolio_data = self._get_portfolio_data()
+            current_drawdown = portfolio_data.get('total_pnl_pct', 0)
+
+            # Get today's P&L
+            today_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+            daily_pnl_query = """
+                SELECT SUM(CASE WHEN side = 'SELL' THEN quantity * price ELSE -quantity * price END) as pnl
+                FROM trades
+                WHERE timestamp >= ?
+            """
+            daily_result = self.db.query(daily_pnl_query, (today_start.isoformat(),))
+            daily_pnl = daily_result[0][0] if daily_result and daily_result[0][0] else 0
+
+            # Determine circuit breaker status
+            is_active = False
+            breaker_reason = None
+
+            if breaker_events:
+                # Check if the most recent breaker event indicates active halt
+                last_event = breaker_events[0]
+                if 'TRIGGERED' in str(last_event[3]).upper() or last_event[1] == 'CRITICAL':
+                    is_active = True
+                    breaker_reason = last_event[3]
+
+            # Also check against risk limits
+            daily_limit = -0.05 * self.initial_capital  # -5%
+            drawdown_limit = -0.20  # -20%
+
+            if daily_pnl < daily_limit:
+                is_active = True
+                breaker_reason = f"Daily loss limit exceeded: ${daily_pnl:,.2f}"
+            elif current_drawdown < drawdown_limit * 100:
+                is_active = True
+                breaker_reason = f"Max drawdown exceeded: {current_drawdown:.1f}%"
+
+            return {
+                'is_active': is_active,
+                'reason': breaker_reason,
+                'current_drawdown': current_drawdown,
+                'daily_pnl': daily_pnl,
+                'daily_limit': daily_limit,
+                'drawdown_limit': drawdown_limit * 100
+            }
+
+        except Exception as e:
+            logger.error(f"Error getting circuit breaker status: {e}")
+            return {
+                'is_active': False,
+                'reason': None,
+                'current_drawdown': 0,
+                'daily_pnl': 0,
+                'daily_limit': -5000,
+                'drawdown_limit': -20
+            }
+
+    def _build_circuit_breaker_display(self, data: Dict):
+        """Build circuit breaker status display."""
+        is_active = data.get('is_active', False)
+
+        # Status indicator
+        if is_active:
+            status_style = {
+                'backgroundColor': '#dc3545',
+                'color': 'white',
+                'padding': '10px 20px',
+                'borderRadius': '8px',
+                'fontWeight': 'bold',
+                'display': 'inline-block'
+            }
+            status_text = '⛔ TRADING HALTED'
+        else:
+            status_style = {
+                'backgroundColor': '#28a745',
+                'color': 'white',
+                'padding': '10px 20px',
+                'borderRadius': '8px',
+                'fontWeight': 'bold',
+                'display': 'inline-block'
+            }
+            status_text = '✅ TRADING ACTIVE'
+
+        # Build the display
+        children = [
+            # Status indicator
+            html.Div([
+                html.Span(status_text, style=status_style),
+            ], style={'marginBottom': '15px'}),
+        ]
+
+        # Add reason if halted
+        if is_active and data.get('reason'):
+            children.append(
+                html.Div([
+                    html.Span('Reason: ', style={'fontWeight': 'bold', 'color': '#dc3545'}),
+                    html.Span(data['reason'], style={'color': '#dc3545'})
+                ], style={'marginBottom': '10px'})
+            )
+
+        # Risk metrics row
+        drawdown_color = 'red' if data['current_drawdown'] < -10 else ('orange' if data['current_drawdown'] < -5 else 'green')
+        daily_pnl_color = 'red' if data['daily_pnl'] < 0 else 'green'
+
+        children.append(
+            html.Div([
+                # Current Drawdown
+                html.Div([
+                    html.Span('Current Drawdown: ', style={'fontWeight': 'bold'}),
+                    html.Span(f"{data['current_drawdown']:.2f}%", style={'color': drawdown_color}),
+                    html.Span(f" (Limit: {data['drawdown_limit']:.0f}%)", style={'color': '#666', 'fontSize': '12px'}),
+                ], style={'display': 'inline-block', 'marginRight': '40px'}),
+
+                # Daily P&L
+                html.Div([
+                    html.Span("Today's P&L: ", style={'fontWeight': 'bold'}),
+                    html.Span(f"${data['daily_pnl']:,.2f}", style={'color': daily_pnl_color}),
+                    html.Span(f" (Limit: ${data['daily_limit']:,.0f})", style={'color': '#666', 'fontSize': '12px'}),
+                ], style={'display': 'inline-block'}),
+            ], style={'backgroundColor': '#f8f9fa', 'padding': '15px', 'borderRadius': '8px'})
+        )
+
+        return html.Div(children)
+
+    def _build_risk_alerts_table(self, alerts: List) -> html.Div:
+        """Build risk alerts table from risk events."""
+        if not alerts:
+            return html.P('No risk alerts', style={'color': '#666', 'fontStyle': 'italic'})
+
+        try:
+            # Format alerts for table
+            table_data = []
+            for alert in alerts[:5]:  # Show last 5 alerts
+                # alert is a tuple: (timestamp, event_type, severity, symbol, description, resolved)
+                timestamp = alert[0] if isinstance(alert, (list, tuple)) else alert.get('timestamp', '')
+                event_type = alert[1] if isinstance(alert, (list, tuple)) else alert.get('event_type', '')
+                severity = alert[2] if isinstance(alert, (list, tuple)) else alert.get('severity', '')
+                symbol = alert[3] if isinstance(alert, (list, tuple)) else alert.get('symbol', '')
+                description = alert[4] if isinstance(alert, (list, tuple)) else alert.get('description', '')
+
+                # Parse timestamp
+                try:
+                    time_str = datetime.fromisoformat(timestamp).strftime('%H:%M:%S')
+                except:
+                    time_str = str(timestamp)[:8]
+
+                table_data.append({
+                    'Time': time_str,
+                    'Type': event_type,
+                    'Severity': severity,
+                    'Symbol': symbol or 'N/A',
+                    'Description': description[:50] + '...' if len(str(description)) > 50 else description
+                })
+
+            df = pd.DataFrame(table_data)
+
+            # Define severity colors
+            severity_colors = {
+                'CRITICAL': '#dc3545',
+                'HIGH': '#fd7e14',
+                'MEDIUM': '#ffc107',
+                'LOW': '#17a2b8'
+            }
+
+            return dash_table.DataTable(
+                data=df.to_dict('records'),
+                columns=[{'name': i, 'id': i} for i in df.columns],
+                style_cell={'textAlign': 'left', 'padding': '8px', 'fontSize': '13px'},
+                style_header={'backgroundColor': '#dc3545', 'color': 'white', 'fontWeight': 'bold'},
+                style_data_conditional=[
+                    {'if': {'row_index': 'odd'}, 'backgroundColor': '#fff5f5'},
+                    {'if': {'filter_query': '{Severity} = "CRITICAL"'}, 'backgroundColor': '#ffcccc'},
+                    {'if': {'filter_query': '{Severity} = "HIGH"'}, 'backgroundColor': '#ffe4cc'},
+                ]
+            )
+
+        except Exception as e:
+            logger.error(f"Error building risk alerts table: {e}")
+            return html.P(f'Error loading alerts: {e}', style={'color': 'red'})
 
     def run(self, host: str = '127.0.0.1', port: int = 8050, debug: bool = False):
         """
